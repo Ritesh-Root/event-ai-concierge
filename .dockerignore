@@ -1,0 +1,14 @@
+node_modules
+coverage
+tests
+.git
+.gitignore
+.env
+.env.example
+.eslintrc.json
+.prettierrc
+.dockerignore
+Dockerfile
+README.md
+*.log
+.DS_Store
