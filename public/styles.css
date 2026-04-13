@@ -341,6 +341,14 @@ body {
   color: var(--color-accent-start);
 }
 
+.message--error {
+  align-self: flex-start;
+  background: rgba(248, 113, 113, 0.12);
+  border: 1px solid rgba(248, 113, 113, 0.55);
+  color: #fecaca;
+  border-bottom-left-radius: 4px;
+}
+
 /* Typing Indicator */
 .message--loading {
   align-self: flex-start;

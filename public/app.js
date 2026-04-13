@@ -78,29 +78,46 @@
     const loadingEl = showTypingIndicator();
 
     try {
+      const data = await sendChat(message);
+      removeTypingIndicator(loadingEl);
+      appendMessage(data.reply, 'ai');
+    } catch (err) {
+      removeTypingIndicator(loadingEl);
+      const friendly = err.message || 'Failed to reach the server. Please try again.';
+      appendMessage(friendly, 'error');
+      showError(friendly);
+    } finally {
+      setLoading(false);
+      chatInput.focus();
+    }
+  }
+
+  /**
+   * Sends a chat message with one automatic retry on 429 (rate limit).
+   */
+  async function sendChat(message) {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message }),
       });
 
-      // Remove typing indicator
-      removeTypingIndicator(loadingEl);
-
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.error || 'Server error (' + response.status + ')');
+      if (response.ok) {
+        return response.json();
       }
 
-      const data = await response.json();
-      appendMessage(data.reply, 'ai');
-    } catch (err) {
-      removeTypingIndicator(loadingEl);
-      showError(err.message || 'Failed to reach the server. Please try again.');
-    } finally {
-      setLoading(false);
-      chatInput.focus();
+      const data = await response.json().catch(() => ({}));
+
+      // Retry once on rate limit, after a short pause
+      if (response.status === 429 && attempt === 0) {
+        await new Promise((r) => setTimeout(r, 1500));
+        continue;
+      }
+
+      throw new Error(data.error || 'Server error (' + response.status + ')');
     }
+    throw new Error('The AI is still busy. Please try again in a moment.');
   }
 
   // ── Message Rendering ───────────────────────────────────────────
@@ -108,8 +125,10 @@
     const el = document.createElement('div');
     el.classList.add('message', 'message--' + sender);
 
-    if (sender === 'ai') {
-      // Basic markdown-lite formatting
+    if (sender === 'error') {
+      el.setAttribute('role', 'alert');
+      el.textContent = '⚠️ ' + text;
+    } else if (sender === 'ai') {
       el.innerHTML = formatAIResponse(text);
     } else {
       el.textContent = text;
@@ -168,6 +187,10 @@
     sendBtn.disabled = loading;
     chatInput.disabled = loading;
     chatTranscript.setAttribute('aria-busy', String(loading));
+    document.querySelectorAll('.chip[data-query]').forEach((chip) => {
+      chip.disabled = loading;
+      chip.setAttribute('aria-disabled', String(loading));
+    });
   }
 
   // ── Error Banner ────────────────────────────────────────────────

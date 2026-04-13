@@ -55,11 +55,18 @@ router.post('/', async (req, res) => {
 
     return res.json({ reply });
   } catch (err) {
-    console.error('[ChatRoute] Error:', err.message);
+    console.error('[ChatRoute] Error:', err.code || '?', err.message);
 
-    if (err.message.includes('API key')) {
+    // Map service-level error codes to HTTP responses
+    if (err.code === 'NO_KEY' || err.code === 'AUTH' || err.message.includes('API key')) {
       return res.status(503).json({
         error: 'AI service is temporarily unavailable. Please try again later.',
+      });
+    }
+
+    if (err.code === 'RATE_LIMIT') {
+      return res.status(429).json({
+        error: 'The AI is busy right now. Please wait a few seconds and try again.',
       });
     }
 
