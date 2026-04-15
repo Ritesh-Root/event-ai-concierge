@@ -1,19 +1,5 @@
-/**
- * @fileoverview Frontend app for EventAI Concierge.
- * Features:
- *   - Streaming chat (SSE) with rich-card rendering
- *   - Voice input (Web Speech API, hold-to-talk)
- *   - Text-to-speech replies
- *   - Image analysis (Gemini Vision)
- *   - Interactive SVG floor map with room highlighting
- *   - Personal agenda with localStorage + .ics export
- *   - PWA service-worker registration
- */
-
 (function () {
   'use strict';
-
-  // ── State ───────────────────────────────────────────────────────
   const state = {
     event: null,
     isLoading: false,
@@ -22,11 +8,8 @@
     savedSessions: loadSaved(),
     activeTab: 'chat',
   };
-
-  // ── Elements ────────────────────────────────────────────────────
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => document.querySelectorAll(sel);
-
   const el = {
     chatForm: $('#chat-form'),
     chatInput: $('#chat-input'),
@@ -52,8 +35,6 @@
     sessionList: $('#session-list'),
     eventSub: $('#event-sub'),
   };
-
-  // ── Boot ────────────────────────────────────────────────────────
   async function init() {
     wireTabs();
     wireChatForm();
@@ -64,7 +45,6 @@
     wireFloorSwitch();
     wireAgenda();
     registerSW();
-
     try {
       const res = await fetch('/api/event');
       state.event = await res.json();
@@ -73,12 +53,9 @@
       renderAgenda();
       populateTrackFilter();
     } catch {
-      // Non-fatal — the chat still works
       console.warn('Event dataset unavailable. Map and agenda disabled until reconnect.');
     }
   }
-
-  // ── Tabs ────────────────────────────────────────────────────────
   function wireTabs() {
     el.tabs.forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -98,8 +75,6 @@
       });
     });
   }
-
-  // ── Chat ────────────────────────────────────────────────────────
   function wireChatForm() {
     el.chatForm.addEventListener('submit', handleSubmit);
     el.chatInput.addEventListener('input', autoResize);
@@ -110,7 +85,6 @@
       }
     });
   }
-
   function wireChips() {
     $$('.chip[data-query]').forEach((chip) => {
       chip.addEventListener('click', () => {
@@ -121,24 +95,19 @@
       });
     });
   }
-
   function autoResize() {
     el.chatInput.style.height = 'auto';
     el.chatInput.style.height = Math.min(el.chatInput.scrollHeight, 140) + 'px';
   }
-
   async function handleSubmit(e) {
     e.preventDefault();
     if (state.isLoading) return;
-
     const message = el.chatInput.value.trim();
     if (!message) return;
-
     el.chatInput.value = '';
     autoResize();
     hideError();
     appendMessage(message, 'user');
-
     setLoading(true);
     switchTab('chat');
     const aiBubble = appendMessage('', 'ai');
@@ -146,7 +115,6 @@
     caret.className = 'caret';
     aiBubble.appendChild(caret);
     scrollToBottom();
-
     try {
       let buffer = '';
       await streamChat(message, (chunk) => {
@@ -156,8 +124,6 @@
         aiBubble.appendChild(caret);
         scrollToBottom();
       });
-
-      // Finalise — strip CARDS marker, render rich cards
       const { visibleText, cards } = stripCardMarker(buffer);
       aiBubble.innerHTML = formatAIResponse(visibleText);
       if (cards && cards.length) {
@@ -176,19 +142,13 @@
       el.chatInput.focus();
     }
   }
-
-  /**
-   * Streams a chat response via SSE POST. Falls back to /api/chat on failure.
-   */
   async function streamChat(message, onChunk) {
     const res = await fetch('/api/chat/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
       body: JSON.stringify({ message }),
     });
-
     if (!res.ok || !res.body) {
-      // Try non-streaming fallback
       const fallback = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -199,7 +159,6 @@
       onChunk(data.reply || '');
       return;
     }
-
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
@@ -207,13 +166,10 @@
       const { value, done } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
-
-      // Parse SSE frames
       let idx;
       while ((idx = buffer.indexOf('\n\n')) !== -1) {
         const frame = buffer.slice(0, idx);
         buffer = buffer.slice(idx + 2);
-
         const lines = frame.split('\n');
         let event = 'message';
         let data = '';
@@ -226,7 +182,6 @@
             const parsed = JSON.parse(data);
             if (parsed.text) onChunk(parsed.text);
           } catch {
-            // ignore
           }
         } else if (event === 'error') {
           try {
@@ -241,8 +196,6 @@
       }
     }
   }
-
-  // ── Rendering ───────────────────────────────────────────────────
   function appendMessage(text, sender) {
     const node = document.createElement('div');
     node.classList.add('message', 'message--' + sender);
@@ -258,7 +211,6 @@
     scrollToBottom();
     return node;
   }
-
   function formatAIResponse(text) {
     let safe = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     safe = safe.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
@@ -266,10 +218,6 @@
     safe = safe.replace(/\n/g, '<br/>');
     return safe;
   }
-
-  /**
-   * Extracts a <CARDS>{...}</CARDS> marker from an AI response.
-   */
   function stripCardMarker(text) {
     const re = /<CARDS>(.*?)<\/CARDS>\s*$/s;
     const match = text.match(re);
@@ -282,7 +230,6 @@
       return { visibleText, cards: [] };
     }
   }
-
   function renderCardRail(cards) {
     if (!state.event || !cards.length) return null;
     const rail = document.createElement('div');
@@ -297,7 +244,6 @@
     });
     return made ? rail : null;
   }
-
   function buildRichCard(item) {
     const node = document.createElement('div');
     node.className = 'rich-card';
@@ -335,7 +281,6 @@
     } else {
       return null;
     }
-
     node.addEventListener('click', (e) => {
       const btn = e.target.closest('.rc-btn');
       if (!btn) return;
@@ -353,14 +298,11 @@
     });
     return node;
   }
-
   function escapeHTML(s) {
     return String(s ?? '').replace(/[&<>"']/g, (c) => ({
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
     })[c]);
   }
-
-  // ── Loading / errors ────────────────────────────────────────────
   function setLoading(loading) {
     state.isLoading = loading;
     el.sendBtn.disabled = loading;
@@ -384,8 +326,6 @@
       el.chatTranscript.scrollTop = el.chatTranscript.scrollHeight;
     });
   }
-
-  // ── Voice input (Web Speech API) ────────────────────────────────
   function wireMic() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) {
@@ -421,15 +361,13 @@
       rec.start();
     };
     const stop = () => {
-      try { rec && rec.stop(); } catch { /* noop */ }
+      try { rec && rec.stop(); } catch {  }
     };
     el.micBtn.addEventListener('pointerdown', start);
     el.micBtn.addEventListener('pointerup', stop);
     el.micBtn.addEventListener('pointerleave', stop);
     el.micBtn.addEventListener('pointercancel', stop);
   }
-
-  // ── Text-to-speech ──────────────────────────────────────────────
   function wireTTS() {
     if (!('speechSynthesis' in window)) {
       el.ttsBtn.hidden = true;
@@ -448,10 +386,8 @@
       utter.rate = 1.02;
       utter.pitch = 1.0;
       speechSynthesis.speak(utter);
-    } catch { /* ignored */ }
+    } catch {  }
   }
-
-  // ── Image upload → Gemini Vision ────────────────────────────────
   function wireImage() {
     el.imageBtn.addEventListener('click', () => el.imageInput.click());
     el.imageInput.addEventListener('change', async () => {
@@ -468,14 +404,12 @@
         reader.onerror = reject;
         reader.readAsDataURL(file);
       });
-
       const userNode = appendMessage('Analysing this photo…', 'user');
       const img = document.createElement('img');
       img.src = dataUrl;
       img.alt = 'Uploaded photo';
       img.className = 'user-photo';
       userNode.prepend(img);
-
       setLoading(true);
       const aiBubble = appendMessage('', 'ai');
       const caret = document.createElement('span');
@@ -507,8 +441,6 @@
       }
     });
   }
-
-  // ── Floor map ───────────────────────────────────────────────────
   function wireFloorSwitch() {
     el.floorBtns.forEach((btn) => {
       btn.addEventListener('click', () => switchFloor(Number(btn.dataset.floor)));
@@ -528,30 +460,22 @@
     });
     renderMap(floor);
   }
-
   function renderMap(floor) {
     if (!state.event) return;
     const { width, height } = state.event.venue.mapBox;
-
     const allItems = [
       ...state.event.sessions.map((s) => ({ kind: 'session', ...s, ...s.map, meta: `${s.time} · ${s.track}` })),
       ...state.event.booths.map((b) => ({ kind: 'booth', ...b, ...b.map, meta: `${b.category} · ${b.location}` })),
       ...state.event.quietZones.map((q) => ({ kind: 'quiet', ...q, ...q.map, meta: q.amenities })),
     ].filter((it) => it.floor === floor);
-
-    // Build SVG
     let svg = `<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Floor ${floor} map">
       <rect class="map-floor-outline" x="20" y="20" width="${width - 40}" height="${height - 40}" rx="24"/>`;
-
-    // Grid lines for visual texture
     for (let x = 100; x < width; x += 100) {
       svg += `<line x1="${x}" y1="20" x2="${x}" y2="${height - 20}" stroke="rgba(255,255,255,.03)" stroke-width="1"/>`;
     }
     for (let y = 100; y < height; y += 100) {
       svg += `<line x1="20" y1="${y}" x2="${width - 20}" y2="${y}" stroke="rgba(255,255,255,.03)" stroke-width="1"/>`;
     }
-
-    // Rooms / pins
     allItems.forEach((it) => {
       const rx = 22;
       const w = it.kind === 'session' ? 180 : 100;
@@ -563,10 +487,8 @@
         <text class="map-label-sub" x="${it.x}" y="${it.y + 14}" text-anchor="middle">${escapeHTML(truncate(it.meta || '', 36))}</text>
       </g>`;
     });
-
     svg += '</svg>';
     el.mapSurface.innerHTML = svg;
-
     el.mapSurface.querySelectorAll('.map-room').forEach((rect) => {
       rect.addEventListener('click', () => {
         const label = rect.dataset.label;
@@ -576,11 +498,9 @@
         rect.classList.add('is-highlight');
       });
     });
-
     el.mapDetail.textContent = `Floor ${floor} · ${allItems.length} locations. Tap any pin for details.`;
     el.mapDetail.classList.remove('is-active');
   }
-
   function showMapDetail(item) {
     if (!item) return;
     const title = item.label || item.name || 'Location';
@@ -588,7 +508,6 @@
     el.mapDetail.innerHTML = `<strong>${escapeHTML(title)}</strong> — ${escapeHTML(extra)}`;
     el.mapDetail.classList.add('is-active');
   }
-
   function highlightRoom(label) {
     if (!label) return;
     requestAnimationFrame(() => {
@@ -599,10 +518,8 @@
       rect.scrollIntoView({ behavior: 'smooth', block: 'center' });
     });
   }
-
   function highlightRoomsFromCards(cards) {
     if (!cards || !cards.length || !state.event) return;
-    // Pick first referenced location and switch to its floor quietly
     for (const c of cards) {
       let floor, label;
       if (c.type === 'session') {
@@ -615,7 +532,6 @@
         floor = c.floor; label = c.label;
       }
       if (floor && label) {
-        // Pre-render the floor so highlight works when user opens Map tab
         if (state.currentFloor !== floor) {
           state.currentFloor = floor;
           el.floorBtns.forEach((b) => {
@@ -630,12 +546,9 @@
       }
     }
   }
-
   function truncate(s, n) { return s.length > n ? s.slice(0, n - 1) + '…' : s; }
   function escapeAttr(s) { return String(s).replace(/"/g, '&quot;'); }
   function cssEscape(s) { return String(s).replace(/(["\\])/g, '\\$1'); }
-
-  // ── Agenda ──────────────────────────────────────────────────────
   function wireAgenda() {
     el.agendaRecommend.addEventListener('click', async () => {
       if (!state.event) return;
@@ -652,7 +565,6 @@
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed');
-        // Parse session IDs from the response
         const ids = (data.reply.match(/\bS\d+\b/g) || []).filter((id, i, a) => a.indexOf(id) === i);
         ids.forEach((id) => {
           if (!state.savedSessions.includes(id) && state.event.sessions.some((s) => s.id === id)) {
@@ -669,11 +581,9 @@
         el.agendaRecommend.textContent = '✨ Recommend for me';
       }
     });
-
     el.agendaExport.addEventListener('click', exportICS);
     el.trackFilter.addEventListener('change', renderAgenda);
   }
-
   function populateTrackFilter() {
     if (!state.event) return;
     const tracks = [...new Set(state.event.sessions.map((s) => s.track))].sort();
@@ -684,7 +594,6 @@
       el.trackFilter.appendChild(opt);
     });
   }
-
   function renderAgenda() {
     if (!state.event) return;
     const filter = el.trackFilter.value;
@@ -717,14 +626,12 @@
       el.sessionList.appendChild(li);
     });
   }
-
   function toggleSaved(id) {
     const idx = state.savedSessions.indexOf(id);
     if (idx >= 0) state.savedSessions.splice(idx, 1);
     else state.savedSessions.push(id);
     persistSaved();
   }
-
   function loadSaved() {
     try {
       const raw = localStorage.getItem('eventai.saved');
@@ -733,10 +640,8 @@
   }
   function persistSaved() {
     try { localStorage.setItem('eventai.saved', JSON.stringify(state.savedSessions)); }
-    catch { /* ignore */ }
+    catch {  }
   }
-
-  // ── .ics export ─────────────────────────────────────────────────
   function exportICS() {
     if (!state.event) return;
     const saved = state.event.sessions.filter((s) => state.savedSessions.includes(s.id));
@@ -749,8 +654,7 @@
     const fmtEnd = (t) => t.split('–')[1].replace(':', '') + '00';
     const uid = (s) => `${s.id}-${date}@eventai`;
     const dtstamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-
-    const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//EventAI//InnovateSphere//EN', 'CALSCALE:GREGORIAN'];
+    const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-
     saved.forEach((s) => {
       lines.push('BEGIN:VEVENT');
       lines.push(`UID:${uid(s)}`);
@@ -773,21 +677,16 @@
     a.remove();
     URL.revokeObjectURL(url);
   }
-
   function escapeICS(s) {
     return String(s ?? '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
   }
-
-  // ── PWA ─────────────────────────────────────────────────────────
   function registerSW() {
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js').catch(() => { /* silent */ });
+        navigator.serviceWorker.register('/sw.js').catch(() => {  });
       });
     }
   }
-
-  // ── Go ──────────────────────────────────────────────────────────
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {
