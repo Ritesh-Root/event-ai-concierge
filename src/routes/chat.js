@@ -19,6 +19,22 @@ const { createChatLimiter } = require('../middleware/rateLimit');
 const router = express.Router();
 const chatLimiter = createChatLimiter();
 
+const responseCache = new Map();
+const CACHE_TTL = 10 * 60 * 1000; // 10 mins
+
+function getCached(key) {
+  const item = responseCache.get(key);
+  if (item && Date.now() - item.time < CACHE_TTL) return item.value;
+  return null;
+}
+
+function setCache(key, value) {
+  responseCache.set(key, { value, time: Date.now() });
+  if (responseCache.size > 500) {
+    responseCache.delete(responseCache.keys().next().value);
+  }
+}
+
 const MAX_MESSAGE_LEN = 500;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB
 const ALLOWED_IMAGE_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif']);
@@ -60,7 +76,12 @@ router.post('/chat', chatLimiter, async (req, res) => {
     const err = validateMessage(message);
     if (err) return res.status(400).json({ error: err });
 
-    const reply = await askGemini(sanitize(message.trim()));
+    const cleanMsg = sanitize(message.trim());
+    const cached = getCached(cleanMsg);
+    if (cached) return res.json({ reply: cached });
+
+    const reply = await askGemini(cleanMsg);
+    setCache(cleanMsg, reply);
     return res.json({ reply });
   } catch (err) {
     console.error('[ChatRoute] /chat error:', err.code || '?', err.message);
@@ -99,9 +120,22 @@ router.post('/chat/stream', chatLimiter, async (req, res) => {
     const heartbeat = setInterval(() => res.write(': ping\n\n'), 15000);
     req.on('close', () => clearInterval(heartbeat));
 
+    const cached = getCached(clean);
+    if (cached) {
+      write('chunk', JSON.stringify({ text: cached }));
+      clearInterval(heartbeat);
+      write('done', JSON.stringify({ ok: true }));
+      res.end();
+      return;
+    }
+
+    let fullText = '';
     for await (const chunk of streamGemini(clean)) {
+      fullText += chunk;
       write('chunk', JSON.stringify({ text: chunk }));
     }
+    setCache(clean, fullText);
+    
     clearInterval(heartbeat);
     write('done', JSON.stringify({ ok: true }));
     res.end();

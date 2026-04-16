@@ -4,7 +4,7 @@
   "description": "AI-powered concierge for physical event attendees — schedule, navigation, networking, accessibility, and Q&A via Gemini 2.5 Flash",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "NODE_ENV=production node server.js",
     "dev": "node --watch server.js",
     "test": "jest --coverage --forceExit --detectOpenHandles",
     "lint": "eslint .",

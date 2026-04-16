@@ -30,6 +30,7 @@ app.use(mongoSanitize());
 
 // ── Static files ──────────────────────────────────────────────────────
 app.use(express.static(path.join(__dirname, 'public'), {
+  maxAge: '1d',
   setHeaders: (res, filePath) => {
     if (filePath.endsWith('sw.js') || filePath.endsWith('manifest.webmanifest')) {
       res.setHeader('Cache-Control', 'no-cache');
